@@ -22,13 +22,19 @@
 #include <PubSubClient.h>
 #include <Ticker.h>
 #include <ArduinoJson.h>          //https://bblanchon.github.io/ArduinoJson/
-#include <ArduinoOTA.h>
+#include <ESP8266WebServer.h>
+#include <ESP8266mDNS.h>
 
 
 Ticker ticker;
 Ticker ticker_btn; 
 uint16_t counter_tick = 0;
 WiFiManager wifiManager;
+ESP8266WebServer server(80);
+String webPage = "";
+
+
+MDNSResponder mdns;
 
 
 
@@ -198,9 +204,31 @@ void setup() {
 
   client.setServer(mqtt_server, 1883);    //Configuration de la connexion au serveur MQTT
   client.setCallback(mqtt_callback);
+
+  webPage += "<h1>ESP8266 Web Server</h1><p>Socket #1 <a href=\"socket1On\"><button>ON</button></a>&nbsp;<a href=\"socket1Off\"><button>OFF</button></a></p>";
+  if (mdns.begin("esp8266", WiFi.localIP())) {
+    Serial.println("MDNS responder started");
+  }
+
+ server.on("/", [](){
+    server.send(200, "text/html", webPage);
+  });
+  server.on("/socket1On", [](){
+    server.send(200, "text/html", webPage);
+    int state = 0; 
+    digitalWrite(PIN_RELAI, !state);     // set pin to the opposite state
+    sprintf (msg, mqtt_msg,mqtt_domoticz_id,(state == 0) ?  "On" : "Off");
+    client.publish(mqtt_inTopic,msg);
+   });
+  server.on("/socket1Off", [](){
+    server.send(200, "text/html", webPage);
+    int state = 1; 
+    digitalWrite(PIN_RELAI, !state);     // set pin to the opposite state
+    sprintf (msg, mqtt_msg,mqtt_domoticz_id,(state == 0) ?  "On" : "Off");
+    client.publish(mqtt_inTopic,msg);  });
+  server.begin();
+  Serial.println("HTTP server started");
   
-  ArduinoOTA.setHostname("Relai_S22"); // on donne une petit nom a notre module
-  ArduinoOTA.begin(); // initialisation de l'OTA
 
 }
 
@@ -211,6 +239,6 @@ void loop() {
     reconnect();
   }
   client.loop();
-  ArduinoOTA.handle(); 
+  server.handleClient();
 
 }
