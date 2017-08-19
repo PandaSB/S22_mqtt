@@ -219,7 +219,7 @@ void setup() {
   ticker.attach(0.6, tick);
   ticker_btn.attach (BUTTON_CHECK_PERIODE,tick_btn);
 
-   //SPIFFS.format();S
+  //SPIFFS.format();
   //wifiManager.resetSettings();
 
   //mount FS  ; 
