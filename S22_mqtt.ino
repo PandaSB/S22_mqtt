@@ -29,6 +29,34 @@ SOFTWARE.
  * @brief controle by mqtt a S22 power switch 
  */
 
+
+#define S22_HARDWARE
+//#define S20_HARDWARE
+//#define ESP01_HARDWARE
+
+#ifdef S20_HARDWARE
+#define PIN_LED   13
+#define PIN_RELAI 12
+#define PIN_BTN   00
+#endif
+
+#ifdef S22_HARDWARE
+#define PIN_LED       13
+#define PIN_RELAI     12
+#define PIN_BTN       00
+#define PIN_JACK_PIN2 04
+#define PIN_JACK_TIP  14
+
+#define DHTPIN 14     // what digital pin we're connected to
+#define DHTTYPE DHT22   // DHT 22  (AM2302), AM2321
+#endif
+
+#ifdef ESP01_HARDWARE
+#define PIN_RELAI 02
+#define PIN_BTN   00
+#define PIN_LED   03
+#endif
+
 /*
 INCLUDES 
 */
@@ -41,18 +69,23 @@ INCLUDES
 #include <ArduinoJson.h>          //https://bblanchon.github.io/ArduinoJson/
 #include <PubSubClient.h>
 #include <Ticker.h>
-
+#ifdef DHTPIN
+#include <Adafruit_Sensor.h>
+#include <DHT.h>
+#include <DHT_U.h>
+#endif
 
 /*
 GLOBALS DEFINES
 */
 /* #define MQTT_MAX_PACKET_SIZE 1024 must ne update in PubSubClient.h */
-#define PIN_LED   13
-#define PIN_RELAI 12
-#define PIN_BTN   00
 
 #define BUTTON_CHECK_PERIODE 0.1
 #define BUTTON_CHECK_LOOP     10   /*1 / BUTTON_CHECK_PERIODE*/
+#ifdef DHTPIN
+#define TEMP_CHECK_PERIODE    15
+#endif
+
 
 #define DEFAULT_MQTT_SERVER "192.168.1.201"
 #define DEFAULT_MQTT_USER ""
@@ -61,13 +94,24 @@ GLOBALS DEFINES
 #define DEFAULT_MQTT_INTOPIC  "domoticz/in"
 #define DEFAULT_MQTT_DOMOTICZ_ID "95"
 #define DEFAULT_MQTT_MSG    "{\"command\": \"switchlight\", \"idx\": %s, \"switchcmd\": \"%s\", \"level\": 100}"
+#define DEFAULT_MQTT_DOMOTICZ_TEMP_ID "97"
+#define DEFAULT_MQTT_TEMP_MSG    "{\"idx\": %s, \"nvalue\": 0, \"svalue\": \"%s;%s\", \"level\": 100}"
 
+
+
+#ifdef DHTPIN
+DHT_Unified dht(DHTPIN, DHTTYPE);
+#endif 
 
 /*
 GLOBAL VARIABLES
 */
 Ticker ticker;
 Ticker ticker_btn; 
+#ifdef DHTPIN
+Ticker ticker_temp; 
+#endif
+
 uint16_t counter_tick = 0;
 WiFiManager wifiManager;
 ESP8266WebServer server(80);
@@ -82,9 +126,15 @@ char mqtt_inTopic[40]     = DEFAULT_MQTT_INTOPIC;
 char mqtt_outTopic[40]    = DEFAULT_MQTT_OUTTOPIC;
 char mqtt_domoticz_id[10] = DEFAULT_MQTT_DOMOTICZ_ID;
 char mqtt_msg[80]         = DEFAULT_MQTT_MSG;
+#ifdef DHTPIN
+char mqtt_domoticz_temp_id[10] = DEFAULT_MQTT_DOMOTICZ_TEMP_ID;
+char mqtt_temp_msg[80]         = DEFAULT_MQTT_TEMP_MSG;
+#endif
+
 char msg[80] ;
 
 bool shouldSaveConfig = false;
+bool Readtemp_flag = true ;
 
 /**
  * @breif callback to save config 
@@ -149,6 +199,12 @@ void tick_btn()
   }  
 }
 
+#ifdef DHTPIN
+void tick_temp (void) {
+  Readtemp_flag = true ; 
+}
+#endif
+
 /**
  * @brief Confugure WIFI
  */
@@ -187,8 +243,10 @@ void mqtt_callback(char* topic, byte* payload, unsigned int length) {
 void reconnect() {
   //Boucle de reconnexion
   while (!client.connected()) {
+    char szText[24];
+    sprintf (szText,"ESP_%d_Client",ESP.getChipId());
     Serial.print("Connect to MQTT server ...");
-    if (client.connect("ESP8266Client", mqtt_user, mqtt_passwd)) {
+    if (client.connect(szText, mqtt_user, mqtt_passwd)) {
       Serial.println("OK");
       client.subscribe(mqtt_outTopic); 
       sprintf (msg, mqtt_msg,mqtt_domoticz_id,"Off");
@@ -218,9 +276,19 @@ void setup() {
 
   ticker.attach(0.6, tick);
   ticker_btn.attach (BUTTON_CHECK_PERIODE,tick_btn);
+#ifdef DHTPIN
+  ticker_temp.attach (TEMP_CHECK_PERIODE,tick_temp);
+#endif
 
   //SPIFFS.format();
   //wifiManager.resetSettings();
+
+#ifdef DHTPIN
+  dht.begin();
+  sensor_t sensor;
+  dht.temperature().getSensor(&sensor);
+  dht.humidity().getSensor(&sensor);
+#endif
 
   //mount FS  ; 
   Serial.println("mounting FS...");
@@ -244,6 +312,10 @@ void setup() {
           if (json["mqtt_outTopic"])  strcpy(mqtt_outTopic, json["mqtt_outTopic"]);
           if (json["mqtt_domoticz_id"])  strcpy(mqtt_domoticz_id, json["mqtt_domoticz_id"]);
           if (json["mqtt_msg"])  strcpy(mqtt_msg, json["mqtt_msg"]); 
+#ifdef DHTPIN
+          if (json["mqtt_domoticz_temp_id"])  strcpy(mqtt_domoticz_id, json["mqtt_domoticz_temp_id"]);
+          if (json["mqtt_temp_msg"])  strcpy(mqtt_msg, json["mqtt_temp_msg"]); 
+#endif
         }
         configFile.close();
 
@@ -269,7 +341,12 @@ void setup() {
   wifiManager.addParameter(&custom_mqtt_domoticz_id);  
   WiFiManagerParameter custom_mqtt_msg("msg", "domoticz msg", mqtt_msg, 80);
   wifiManager.addParameter(&custom_mqtt_msg);  
-
+#ifdef DHTPIN
+  WiFiManagerParameter custom_mqtt_domoticz_temp_id("domoticz_temp_id", "domoticz temp Id", mqtt_domoticz_temp_id, 10);
+  wifiManager.addParameter(&custom_mqtt_domoticz_temp_id);  
+  WiFiManagerParameter custom_mqtt_temp_msg("temp msg", "domoticz temp msg", mqtt_temp_msg, 80);
+  wifiManager.addParameter(&custom_mqtt_temp_msg);  
+#endif
   wifiManager.setSaveConfigCallback(saveConfigCallback);
   
   if (!wifiManager.autoConnect()) {
@@ -288,7 +365,10 @@ void setup() {
   strcpy(mqtt_outTopic,custom_mqtt_outTopic.getValue());
   strcpy(mqtt_domoticz_id,custom_mqtt_domoticz_id.getValue());
   strcpy(mqtt_msg,custom_mqtt_msg.getValue());
-
+#ifdef DHTPIN
+  strcpy(mqtt_domoticz_temp_id,custom_mqtt_domoticz_temp_id.getValue());
+  strcpy(mqtt_temp_msg,custom_mqtt_temp_msg.getValue());
+#endif 
   if (shouldSaveConfig) {
     Serial.println("saving config");
     DynamicJsonBuffer jsonBuffer;
@@ -300,6 +380,10 @@ void setup() {
     json["mqtt_outTopic"] = mqtt_outTopic;
     json["mqtt_domoticz_id"] = mqtt_domoticz_id;
     json["mqtt_msg"] = mqtt_msg ;
+#ifdef DHTPIN
+    json["mqtt_domoticz_temp_id"] = mqtt_domoticz_temp_id;
+    json["mqtt_temp_msg"] = mqtt_temp_msg ;
+#endif
     File configFile = SPIFFS.open("/config.json", "w");
     if (!configFile) {
       Serial.println("failed to open config file for writing");
@@ -349,8 +433,6 @@ void setup() {
     client.publish(mqtt_inTopic,msg);  });
   server.begin();
   Serial.println("HTTP server started");
-  
-
 }
 
 
@@ -358,10 +440,39 @@ void setup() {
  * @breif main loop 
  */
 void loop() {
+    char szTemp[10];
+    char szHum[10];
+          
     if (!client.connected()) {
     reconnect();
   }
+
+  if (Readtemp_flag== true) {
+    Readtemp_flag =  false ; 
+    sensors_event_t event;  
+    dht.temperature().getEvent(&event);
+    Serial.print("DHT : ");
+    if (!isnan(event.temperature)) { 
+      dtostrf(event.temperature, 4, 2, szTemp);
+      Serial.print("Temperature: ");
+      Serial.print( szTemp);
+      Serial.print(" *C ");
+      Serial.print(" %\t");
+    }
+    dht.humidity().getEvent(&event);
+    if (!isnan(event.relative_humidity)) {
+      dtostrf(event.relative_humidity, 4, 2, szHum);
+      Serial.print("Humidity: ");
+      Serial.print(szHum);
+      Serial.print(" %\t");    
+    }
+    Serial.println("");
+    sprintf (msg, mqtt_temp_msg,mqtt_domoticz_temp_id,szTemp, szHum);
+    client.publish(mqtt_inTopic,msg);
+  }
+  
   client.loop();
   server.handleClient();
+  
 
 }
