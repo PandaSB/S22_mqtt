@@ -447,6 +447,7 @@ void loop() {
     reconnect();
   }
 
+#ifdef DHTPIN
   if (Readtemp_flag== true) {
     Readtemp_flag =  false ; 
     sensors_event_t event;  
@@ -454,22 +455,15 @@ void loop() {
     Serial.print("DHT : ");
     if (!isnan(event.temperature)) { 
       dtostrf(event.temperature, 4, 2, szTemp);
-      Serial.print("Temperature: ");
-      Serial.print( szTemp);
-      Serial.print(" *C ");
-      Serial.print(" %\t");
     }
     dht.humidity().getEvent(&event);
     if (!isnan(event.relative_humidity)) {
-      dtostrf(event.relative_humidity, 4, 2, szHum);
-      Serial.print("Humidity: ");
-      Serial.print(szHum);
-      Serial.print(" %\t");    
+      dtostrf(event.relative_humidity, 4, 2, szHum);   
     }
-    Serial.println("");
     sprintf (msg, mqtt_temp_msg,mqtt_domoticz_temp_id,szTemp, szHum);
     client.publish(mqtt_inTopic,msg);
   }
+#endif 
   
   client.loop();
   server.handleClient();
