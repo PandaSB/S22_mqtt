@@ -83,7 +83,7 @@ GLOBALS DEFINES
 #define BUTTON_CHECK_PERIODE 0.1
 #define BUTTON_CHECK_LOOP     10   /*1 / BUTTON_CHECK_PERIODE*/
 #ifdef DHTPIN
-#define TEMP_CHECK_PERIODE    15
+#define TEMP_CHECK_PERIODE    60
 #endif
 
 
@@ -95,13 +95,14 @@ GLOBALS DEFINES
 #define DEFAULT_MQTT_DOMOTICZ_ID "95"
 #define DEFAULT_MQTT_MSG    "{\"command\": \"switchlight\", \"idx\": %s, \"switchcmd\": \"%s\", \"level\": 100}"
 #define DEFAULT_MQTT_DOMOTICZ_TEMP_ID "97"
-#define DEFAULT_MQTT_TEMP_MSG    "{\"idx\": %s, \"nvalue\": 0, \"svalue\": \"%s;%s\", \"level\": 100}"
+#define DEFAULT_MQTT_TEMP_MSG    "{\"idx\": %s, \"nvalue\": 0, \"svalue\": \"%s;%s;0\", \"level\": 100}"
 
 
 
 #ifdef DHTPIN
 DHT_Unified dht(DHTPIN, DHTTYPE);
 #endif 
+
 
 /*
 GLOBAL VARIABLES
@@ -452,7 +453,6 @@ void loop() {
     Readtemp_flag =  false ; 
     sensors_event_t event;  
     dht.temperature().getEvent(&event);
-    Serial.print("DHT : ");
     if (!isnan(event.temperature)) { 
       dtostrf(event.temperature, 4, 2, szTemp);
     }
