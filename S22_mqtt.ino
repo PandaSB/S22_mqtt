@@ -133,6 +133,8 @@ char mqtt_temp_msg[80]         = DEFAULT_MQTT_TEMP_MSG;
 #endif
 
 char msg[80] ;
+char szTemp[10]= "";
+char szHum[10] = "";
 
 bool shouldSaveConfig = false;
 bool Readtemp_flag = true ;
@@ -200,6 +202,10 @@ void tick_btn()
   }  
 }
 
+/**
+ * @brief timer to refresh temperature 
+ */
+
 #ifdef DHTPIN
 void tick_temp (void) {
   Readtemp_flag = true ; 
@@ -264,6 +270,36 @@ void reconnect() {
 }
 
 /**
+ * @breif refresh webpage
+ */
+void refresh_webpage(void)
+{ 
+  int state = digitalRead(PIN_RELAI);
+  webPage = "<center><h1>ESP_";
+  webPage += ESP.getChipId(); 
+  webPage += "</h1>";
+  webPage += "<p>";
+#ifdef DHTPIN    
+  webPage += "Temperature : " ; 
+  webPage += szTemp ; 
+  webPage += "<br>";  
+#endif      
+#ifdef DHTPIN    
+  webPage += "Humidity : " ;
+  webPage += szHum ; 
+  webPage += "<br>";  
+#endif      
+  if (state == 0) {
+    webPage += "<a href=\"socket1On\"><button>ON</button></a>";
+  } else {
+    webPage += "<a href=\"socket1Off\"><button>OFF</button></a>";
+  }
+  webPage += "</p></center>";
+}
+
+
+
+/**
  * @breif Initialisation 
  */
 void setup() {
@@ -289,6 +325,7 @@ void setup() {
   sensor_t sensor;
   dht.temperature().getSensor(&sensor);
   dht.humidity().getSensor(&sensor);
+  Readtemp_flag = true ; 
 #endif
 
   //mount FS  ; 
@@ -398,17 +435,7 @@ void setup() {
   client.setServer(mqtt_server, 1883);    //set mqtt server. 
   client.setCallback(mqtt_callback);
 
-  { 
-    int state = digitalRead(PIN_RELAI);
-    webPage += "<center><h1>ESP_";
-    webPage += ESP.getChipId(); 
-    webPage += "</h1>";
-    webPage += "<p>";
-    webPage += "<a href=\"socket1On\"><button>ON</button></a>";
-    webPage += "<br>";
-    webPage += "<a href=\"socket1Off\"><button>OFF</button></a>";
-    webPage += "</p></center>";
-  }
+    webPage = "" ; 
     
   char szText[16];
   sprintf (szText,"ESP_%d",ESP.getChipId());
@@ -417,21 +444,25 @@ void setup() {
   }
 
  server.on("/", [](){
+    refresh_webpage ();
     server.send(200, "text/html", webPage);
   });
   server.on("/socket1On", [](){
-    server.send(200, "text/html", webPage);
     int state = 0; 
     digitalWrite(PIN_RELAI, !state);     // set pin to the opposite state
     sprintf (msg, mqtt_msg,mqtt_domoticz_id,(state == 0) ?  "On" : "Off");
     client.publish(mqtt_inTopic,msg);
+    refresh_webpage ();
+    server.send(200, "text/html", webPage);    
    });
   server.on("/socket1Off", [](){
-    server.send(200, "text/html", webPage);
     int state = 1; 
     digitalWrite(PIN_RELAI, !state);     // set pin to the opposite state
     sprintf (msg, mqtt_msg,mqtt_domoticz_id,(state == 0) ?  "On" : "Off");
-    client.publish(mqtt_inTopic,msg);  });
+    client.publish(mqtt_inTopic,msg);  
+    refresh_webpage ();
+    server.send(200, "text/html", webPage);    
+  });
   server.begin();
   Serial.println("HTTP server started");
 }
@@ -441,8 +472,6 @@ void setup() {
  * @breif main loop 
  */
 void loop() {
-    char szTemp[10];
-    char szHum[10];
           
     if (!client.connected()) {
     reconnect();
@@ -464,6 +493,9 @@ void loop() {
     client.publish(mqtt_inTopic,msg);
   }
 #endif 
+
+  refresh_webpage();
+
   
   client.loop();
   server.handleClient();
